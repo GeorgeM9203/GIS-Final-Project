@@ -8,10 +8,10 @@ BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 RAW_DIR  = DATA_DIR / "raw"
 
-for d in [RAW_DIR / "census", RAW_DIR / "gtfs", RAW_DIR / "shapefiles"]:
+for d in [RAW_DIR / "census", RAW_DIR / "shapefiles"]:
     d.mkdir(parents=True, exist_ok=True)
     
-CENSUS_API_KEY = "8bd55aefea1b0e2f7e7143786525de329451ff87"
+CENSUS_API_KEY = "de3a68b7b0a11aa48b1905d7785ad6c934b68215"
 
 def download_acs_vehicles(year: int = 2022) -> pd.DataFrame:
     print("⬇  Downloading ACS B25044 data...")
@@ -97,36 +97,39 @@ def download_tiger_tracts(year: int = 2022) -> Path:
     return out_dir
 
 
-def download_metro_gtfs() -> Path:
-    print("⬇  Downloading LA Metro GTFS data...")
+def download_metro_gtfs() -> dict:
+    print("⬇  Downloading LA Metro GTFS data (Bus & Rail)...")
 
-    url      = "https://gitlab.com/LACMTA/gtfs_bus/raw/master/gtfs_bus.zip"
-    out_dir  = RAW_DIR / "gtfs"
-    zip_path = out_dir / "metro_gtfs.zip"
+    feeds = {
+        "bus": "https://gitlab.com/LACMTA/gtfs_bus/raw/master/gtfs_bus.zip",
+        "rail": "https://gitlab.com/LACMTA/gtfs_rail/raw/master/gtfs_rail.zip",
+    }
+    
+    out_dirs = {}
 
-    if not (out_dir / "stops.txt").exists():
-        try:
-            resp = requests.get(url, timeout=180, stream=True)
-            resp.raise_for_status()
-            with open(zip_path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=65536):
-                    f.write(chunk)
-            with zipfile.ZipFile(zip_path) as z:
-                z.extractall(out_dir)
-            print(f"   Extracted GTFS → {out_dir}")
-        except Exception as e:
-            print(f"   ⚠  Auto-download failed: {e}")
-            print(
-                "\n   Manual steps:\n"
-                "   1. Go to https://developer.metro.net/gtfs-schedule-data/\n"
-                "   2. Download the Bus GTFS zip\n"
-                f"  3. Unzip it into: {out_dir}\n"
-                "   Needed files: stops.txt, stop_times.txt, trips.txt, routes.txt\n"
-            )
-    else:
-        print("   GTFS already exists, skipping.")
+    for name, url in feeds.items():
+        out_dir = RAW_DIR / f"gtfs_{name}"
+        out_dir.mkdir(exist_ok=True)
+        out_dirs[name] = out_dir
+        zip_path = out_dir.parent / f"metro_gtfs_{name}.zip"
 
-    return out_dir
+        if not (out_dir / "stops.txt").exists():
+            print(f"   Downloading {name.upper()} GTFS...")
+            try:
+                resp = requests.get(url, timeout=180, stream=True)
+                resp.raise_for_status()
+                with open(zip_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=65536):
+                        f.write(chunk)
+                with zipfile.ZipFile(zip_path) as z:
+                    z.extractall(out_dir)
+                print(f"   Extracted {name.upper()} GTFS → {out_dir}")
+            except Exception as e:
+                print(f"   ⚠  Auto-download failed for {name}: {e}")
+        else:
+            print(f"   {name.upper()} GTFS already exists, skipping.")
+
+    return out_dirs
 
 
 if __name__ == "__main__":
@@ -135,7 +138,7 @@ if __name__ == "__main__":
     print("=" * 55)
 
     if CENSUS_API_KEY == "YOUR_KEY_HERE":
-        print("\n❌  No Census API key set!")
+        print("\n  No Census API key set!")
         print("   1. Get a free key at: https://api.census.gov/data/key_signup.html")
         print("   2. Open this script and replace YOUR_KEY_HERE with your actual key:")
         print('      CENSUS_API_KEY = "abc123yourkeyhere"')
@@ -145,5 +148,5 @@ if __name__ == "__main__":
     shp_dir  = download_tiger_tracts()
     gtfs_dir = download_metro_gtfs()
 
-    print("\n✅  All data downloaded.")
+    print("\n  All data downloaded.")
     print(f"   Census tracts : {len(acs_df)} rows")
