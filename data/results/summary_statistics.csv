@@ -1,0 +1,5 @@
+classification,tract_count,total_households,zero_veh_households,pct_of_total_tracts
+High Need / High Access,683,910061,171566,27.4
+High Need / Low Access (Desert),91,129612,18352,3.6
+Low Need / High Access,1045,1400106,68585,41.9
+Low Need / Low Access,677,921917,32298,27.1
