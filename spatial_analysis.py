@@ -7,6 +7,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
 
+#0.5 miles in US Survey Feet (EPSG:2229)
 BUFFER_DIST_FEET = 2640
 
 def run_spatial_analysis():
