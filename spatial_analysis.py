@@ -7,7 +7,6 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
 
-# 0.5 miles in US Survey Feet (EPSG:2229)
 BUFFER_DIST_FEET = 2640
 
 def run_spatial_analysis():
@@ -19,17 +18,12 @@ def run_spatial_analysis():
     print(f"   Tracts CRS: {tracts.crs.name}, Stops CRS: {stops.crs.name}")
     stops["geometry"] = stops.geometry.buffer(BUFFER_DIST_FEET)
     
-    # Dissolving all overlapping buffers into a single geometry to speed up difference operations
     coverage_area = stops.dissolve()
 
-    # Spatial difference: keep only parts of tracts that do NOT intersect the coverage area
     deserts = tracts.overlay(coverage_area, how="difference")
     
-    # Calculate the new area (square miles)
     deserts["desert_area_sqmi"] = (deserts.geometry.area / 5280**2).round(4)
     
-    # Merge with original tracts to get original area and compute percentage
-    # (The overlay difference operation drops any tract completely covered by transit)
     final_deserts = tracts.merge(
         deserts[["GEOID", "desert_area_sqmi"]], 
         on="GEOID", 
@@ -39,7 +33,6 @@ def run_spatial_analysis():
 
     final_deserts["desert_area_sqmi"] = final_deserts["desert_area_sqmi"].fillna(0)
     
-    # Calculate percentage of tract area that is a desert
     final_deserts["pct_desert_area"] = (
         (final_deserts["desert_area_sqmi"] / final_deserts["area_sqmi"]) * 100
     ).round(2)
