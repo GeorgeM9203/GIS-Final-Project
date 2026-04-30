@@ -1,12 +1,11 @@
-import warnings
-warnings.filterwarnings("ignore")
+
 
 import pandas as pd
 import geopandas as gpd
 from pathlib import Path
 
-BASE_DIR     = Path(__file__).parent
-RAW_DIR      = BASE_DIR / "data" / "raw"
+BASE_DIR = Path(__file__).parent
+RAW_DIR = BASE_DIR / "data" / "raw"
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -19,42 +18,34 @@ PEAK_WINDOWS = [
 MAX_HEADWAY_MINUTES = 15
 
 
-def build_tract_geodataframe() -> gpd.GeoDataFrame:
-    print("🔧  Building census tract GeoDataFrame...")
-
+def build_tract_geodataframe():
     acs_csv = RAW_DIR / "census" / "acs_b25044_la.csv"
     acs = pd.read_csv(acs_csv, dtype={"GEOID": str})
 
     shp_dirs = sorted((RAW_DIR / "shapefiles").glob("tl_*_06_tract"))
-    if not shp_dirs:
-        raise FileNotFoundError("No TIGER shapefile found. Run 01_download_data.py first.")
     shp_file = list(shp_dirs[0].glob("*.shp"))[0]
 
     tracts = gpd.read_file(shp_file)
     tracts = tracts[tracts["COUNTYFP"] == "037"].copy()
-    print(f"   Filtered to LA County: {len(tracts)} tracts")
+
     tracts["GEOID"] = tracts["GEOID"].astype(str).str.zfill(11)
 
     merged = tracts.merge(acs, on="GEOID", how="left")
-    print(f"   Joined {len(merged)} tracts (unmatched rows get NaN values)")
-
     merged = merged.to_crs(TARGET_CRS)
 
     merged["area_sqmi"] = (merged.geometry.area / 5280**2).round(4)
 
     out = PROCESSED_DIR / "tracts_with_vehicles.gpkg"
     merged.to_file(out, driver="GPKG")
-    print(f"   Saved → {out}  ({len(merged)} features)")
+
     return merged
 
-def _time_to_seconds(t: str) -> int:
+def time_to_seconds(t):
     h, m, s = map(int, t.split(":"))
     return h * 3600 + m * 60 + s
 
 
-def build_highfreq_stops() -> gpd.GeoDataFrame:
-    print("🔧  Processing GTFS to find high-frequency stops...")
-
+def build_highfreq_stops():
     all_stops_hf = []
 
     for feed_name in ["gtfs_bus", "gtfs_rail"]:
@@ -62,16 +53,16 @@ def build_highfreq_stops() -> gpd.GeoDataFrame:
         if not (gtfs_dir / "stops.txt").exists():
             continue
 
-        stops      = pd.read_csv(gtfs_dir / "stops.txt",      dtype=str)
+        stops = pd.read_csv(gtfs_dir / "stops.txt", dtype=str)
         stop_times = pd.read_csv(gtfs_dir / "stop_times.txt", dtype=str)
-        trips      = pd.read_csv(gtfs_dir / "trips.txt",      dtype=str)
+        trips = pd.read_csv(gtfs_dir / "trips.txt", dtype=str)
 
-        st = stop_times.merge(trips[["trip_id", "route_id", "service_id"]], on="trip_id")
+        st = stop_times.merge(trips[["trip_id", "route_id"]], on="trip_id")
 
-        st["arr_sec"] = st["arrival_time"].apply(_time_to_seconds)
+        st["arr_sec"] = st["arrival_time"].apply(time_to_seconds)
 
         peaks_sec = [
-            (_time_to_seconds(s), _time_to_seconds(e))
+            (time_to_seconds(s), time_to_seconds(e))
             for s, e in PEAK_WINDOWS
         ]
 
@@ -92,9 +83,7 @@ def build_highfreq_stops() -> gpd.GeoDataFrame:
             .rename(columns={"headway_sec": "min_headway_sec"})
         )
         min_hw["min_headway_min"] = (min_hw["min_headway_sec"] / 60).round(1)
-
         highfreq_ids = min_hw[min_hw["min_headway_min"] <= MAX_HEADWAY_MINUTES]["stop_id"]
-        print(f"   [{feed_name.upper()}] {len(highfreq_ids):,} high-frequency stops out of {len(stops):,} total")
 
         stops_hf = stops[stops["stop_id"].isin(highfreq_ids)].copy()
         stops_hf["stop_lat"] = pd.to_numeric(stops_hf["stop_lat"])
@@ -102,9 +91,6 @@ def build_highfreq_stops() -> gpd.GeoDataFrame:
 
         stops_hf = stops_hf.merge(min_hw, on="stop_id", how="left")
         all_stops_hf.append(stops_hf)
-
-    if not all_stops_hf:
-        raise FileNotFoundError("No GTFS stops processed. Make sure to run datacollection.py first.")
 
     combined_stops_hf = pd.concat(all_stops_hf, ignore_index=True)
 
@@ -118,31 +104,9 @@ def build_highfreq_stops() -> gpd.GeoDataFrame:
 
     out = PROCESSED_DIR / "highfreq_stops.gpkg"
     gdf.to_file(out, driver="GPKG")
-    print(f"   Saved combined high-frequency stops → {out}  ({len(gdf)} features)")
+
     return gdf
 
-
-def sanity_check(tracts: gpd.GeoDataFrame, stops: gpd.GeoDataFrame) -> None:
-    print("\n📊  Sanity check:")
-    print(f"   CRS tracts : {tracts.crs}")
-    print(f"   CRS stops  : {stops.crs}")
-    assert tracts.crs == stops.crs, "CRS mismatch! Fix before proceeding."
-
-    pct_valid = tracts["pct_zero_veh"].notna().mean() * 100
-    print(f"   Tracts with valid vehicle data: {pct_valid:.1f}%")
-
-    top5 = tracts.nlargest(5, "pct_zero_veh")[["GEOID", "NAME_x", "pct_zero_veh"]]
-    print("\n   Top 5 tracts by % zero-vehicle households:")
-    print(top5.to_string(index=False))
-
-
 if __name__ == "__main__":
-    print("=" * 55)
-    print("  Transit Deserts LA — Step 2: ETL & Clean")
-    print("=" * 55)
-
-    tracts = build_tract_geodataframe()
-    stops  = build_highfreq_stops()
-    sanity_check(tracts, stops)
-
-    print("\n  Processed data saved to data/processed/")
+    build_tract_geodataframe()
+    build_highfreq_stops()
